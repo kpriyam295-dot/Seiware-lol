@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CommandPrompt.exe — Terminal UI</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cascadia+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+        :root {
+            --cmd-bg: #0c0c0c;
+            --cmd-fg: #cccccc;
+            --cmd-cursor-color: #cccccc;
+            /* 120 cols x ~8.41px per char @ 14px Cascadia Mono ≈ 1009px */
+            --cmd-cols: 120;
+            --cmd-rows: 30;
+            --cmd-char-w: 8.41px;
+            --cmd-line-h: 18.2px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #111;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .cmd-font {
+            font-family: 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: var(--cmd-line-h);
+            letter-spacing: 0;
+        }
+
+        /* ── Window ───────────────────────────────────── */
+        .cmd-window {
+            background: var(--cmd-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06);
+        }
+
+        /* ── Normal title bar (dark) ──────────────────── */
+        .cmd-titlebar {
+            background: #000;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        /* ── Admin title bar (Windows white) ──────────── */
+        .cmd-titlebar.admin-bar {
+            background: linear-gradient(180deg,#fff 0%,#f0f0f0 100%);
+            border-bottom: 1px solid #d0d0d0;
+        }
+        .cmd-titlebar.admin-bar .cmd-titlebar-title { color: #000; }
+        .cmd-titlebar.admin-bar .tb-btn { color: #000; }
+        .cmd-titlebar.admin-bar .tb-btn:hover { background: rgba(0,0,0,.08); }
+        .cmd-titlebar.admin-bar .tb-btn.close:hover { background: #e81123; color: #fff; }
+
+        .cmd-titlebar-left {
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding-left: 10px;
+            gap: 8px;
+        }
+
+        .cmd-titlebar-title {
+            color: #fff;
+            font-family: 'Segoe UI','Inter',sans-serif;
+            font-size: 12px;
+            white-space: nowrap;
+            user-select: none;
+        }
+
+        .tb-buttons { display: flex; height: 100%; }
+
+        .tb-btn {
+            width: 46px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            transition: background .1s;
+        }
+        .tb-btn:hover { background: #333; }
+        .tb-btn.close:hover { background: #e81123; }
+        .tb-btn svg { width: 10px; height: 10px; }
+
+        /* ── Tab bar (normal mode only) ───────────────── */
+        .cmd-tabbar {
+            background: #1a1a1a;
+            height: 36px;
+            display: flex;
+            align-items: flex-end;
+            padding: 0 8px;
+            flex-shrink: 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .cmd-tab {
+            height: 30px;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            gap: 8px;
+            background: #1f1f1f;
+            color: #888;
+            font-family: 'Segoe UI','Inter',sans-serif;
+            font-size: 12px;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+            max-width: 200px;
+            min-width: 80px;
+            border: 1px solid transparent;
+            border-bottom: none;
+            transition: background .1s;
+        }
+        .cmd-tab:hover { background: #2a2a2a; }
+        .cmd-tab.active { background: #0c0c0c; color: #fff; border-color: #333; }
+
+        .cmd-tab-label { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+
+        .cmd-tab-close {
+            width: 18px; height: 18px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 3px; flex-shrink: 0;
+            opacity: 0; transition: opacity .1s, background .1s;
+        }
+        .cmd-tab:hover .cmd-tab-close, .cmd-tab.active .cmd-tab-close { opacity: 1; }
+        .cmd-tab-close:hover { background: rgba(255,255,255,.1); }
+        .cmd-tab-close svg { width: 8px; height: 8px; }
+
+        .cmd-tab-new {
+            width: 30px; height: 30px;
+            display: flex; align-items: center; justify-content: center;
+            color: #888; cursor: pointer; border-radius: 4px; margin-left: 2px;
+            transition: background .1s, color .1s; flex-shrink: 0;
+        }
+        .cmd-tab-new:hover { background: #2a2a2a; color: #ccc; }
+        .cmd-tab-new svg { width: 12px; height: 12px; }
+
+        /* ── Terminal body ─────────────────────────────── */
+        .cmd-body {
+            flex: 1;
+            overflow-y: scroll;
+            overflow-x: hidden;
+            background: var(--cmd-bg);
+            cursor: text;
+            position: relative;
+            /* no padding — content fills edge to edge */
+            padding: 0;
+        }
+
+        /* Inner wrapper: all text lives here with small padding */
+        .cmd-inner {
+            padding: 2px 6px;
+            min-height: 100%;
+            position: relative;
+        }
+
+        /* Dark scrollbar */
+        .cmd-body::-webkit-scrollbar { width: 17px; }
+        .cmd-body::-webkit-scrollbar-track { background: #171717; }
+        .cmd-body::-webkit-scrollbar-thumb {
+            background: #4a4a4a;
+            border: 4px solid #171717;
+            border-radius: 8px;
+        }
+        .cmd-body::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        /* White scrollbar (admin) - Windows style */
+        .cmd-body.admin-sb::-webkit-scrollbar { width: 17px; }
+        .cmd-body.admin-sb::-webkit-scrollbar-track { background: #c0c0c0; }
+        .cmd-body.admin-sb::-webkit-scrollbar-thumb {
+            background: #686868;
+            border: 2px solid #c0c0c0;
+            border-radius: 0;
+        }
+        .cmd-body.admin-sb::-webkit-scrollbar-thumb:hover { background: #555; }
+        .cmd-body.admin-sb::-webkit-scrollbar-button { display: block; height: 17px; background: #c0c0c0; }
+
+        /* ── Lines ────────────────────────────────────── */
+        .cmd-line {
+            color: var(--cmd-fg);
+            white-space: pre;
+            min-height: var(--cmd-line-h);
+        }
+
+        /* Blank selectable rows that fill the remaining screen space.
+           Each row is a full line of no-break-spaces so the user can
+           click anywhere and drag-select across "empty" space, just
+           like real cmd.exe.  The spaces are transparent until selected. */
+        .cmd-blank-row {
+            color: transparent;
+            white-space: pre;
+            min-height: var(--cmd-line-h);
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        /* ── PURE WHITE highlight, BLACK text ─────────── */
+        .cmd-body ::selection {
+            background: #ffffff !important;
+            color: #000000 !important;
+        }
+        .cmd-body ::-moz-selection {
+            background: #ffffff !important;
+            color: #000000 !important;
+        }
+
+        /* ── Blinking underscore cursor ───────────────── */
+        .cmd-cursor {
+            display: inline-block;
+            width: var(--cmd-char-w);
+            height: 3px;
+            background: var(--cmd-cursor-color);
+            animation: blink 1s step-end infinite;
+            vertical-align: baseline;
+            position: relative;
+            top: 2px;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+        /* Character under cursor (white bg, black text) */
+        .cmd-cursor-char {
+            background: #ffffff;
+            color: #000000;
+        }
+
+        /* Click-spawned caret */
+        .cmd-click-hl {
+            position: absolute;
+            width: var(--cmd-char-w);
+            height: var(--cmd-line-h);
+            background: #ffffff;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        /* ── Input line ───────────────────────────────── */
+        .cmd-input-line {
+            color: var(--cmd-fg);
+            white-space: pre-wrap;
+            word-break: break-all;
+            min-height: var(--cmd-line-h);
+        }
+
+        /* ── Settings Modal ───────────────────────────── */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,.6);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000; backdrop-filter: blur(4px);
+        }
+        .modal-box {
+            background: #1e1e1e; border: 1px solid #333;
+            border-radius: 12px; width: 420px; max-width: 90vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,.5); overflow: hidden;
+        }
+        .modal-header {
+            padding: 16px 20px; border-bottom: 1px solid #333;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .modal-body { padding: 20px; }
+        .modal-input {
+            width: 100%; padding: 10px 14px;
+            background: #111; border: 1px solid #444;
+            border-radius: 6px; color: #fff; font-size: 14px;
+            outline: none; transition: border-color .2s;
+        }
+        .modal-input:focus { border-color: #4a9eff; }
+        .modal-btn {
+            padding: 8px 20px; border-radius: 6px;
+            font-size: 13px; font-weight: 500; cursor: pointer;
+            border: 1px solid transparent; transition: all .15s;
+        }
+        .modal-btn-primary { background: #4a9eff; color: #fff; }
+        .modal-btn-primary:hover { background: #3a8eef; }
+        .modal-btn-secondary { background: #333; color: #ccc; }
+        .modal-btn-secondary:hover { background: #444; }
+
+        /* ── Settings gear ────────────────────────────── */
+        .settings-btn {
+            position: fixed; bottom: 20px; right: 20px;
+            width: 48px; height: 48px;
+            background: #1e1e1e; border: 1px solid #333;
+            border-radius: 12px; display: flex; align-items: center;
+            justify-content: center; cursor: pointer; color: #888;
+            transition: all .2s; z-index: 100;
+            box-shadow: 0 4px 15px rgba(0,0,0,.3);
+        }
+        .settings-btn:hover { background: #2a2a2a; color: #fff; border-color: #555; }
+
+        /* ── Page layout ──────────────────────────────── */
+        .page-center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px 20px 20px;
+            width: 100%;
+        }
+
+        .mode-switcher {
+            display: flex; gap: 8px; margin-bottom: 12px;
+        }
+        .mode-btn {
+            padding: 7px 18px; border-radius: 6px;
+            font-size: 13px; font-weight: 500; cursor: pointer;
+            border: 1px solid #333; background: #1a1a1a; color: #888;
+            transition: all .2s; font-family: 'Inter',sans-serif;
+        }
+        .mode-btn:hover { background: #222; color: #ccc; }
+        .mode-btn.active { background: #222; color: #fff; border-color: #555; }
+    </style>
+</head>
+<body>
+
+    <!-- Settings gear -->
+    <button class="settings-btn" onclick="openSettings()" title="Settings">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <circle cx="12" cy="12" r="3"/>
+        </svg>
+    </button>
+
+    <!-- Settings modal -->
+    <div class="modal-overlay" id="settingsModal" style="display:none" onclick="if(event.target===this)closeSettings()">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span style="color:#fff;font-weight:600;font-size:15px;">Settings</span>
+                <button onclick="closeSettings()" style="background:none;border:none;color:#888;cursor:pointer;font-size:18px;padding:4px;">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom:16px">
+                    <label style="color:#aaa;font-size:13px;display:block;margin-bottom:6px">Username</label>
+                    <input class="modal-input" id="setUser" placeholder="e.g. JohnDoe"/>
+                </div>
+                <div style="margin-bottom:16px">
+                    <label style="color:#aaa;font-size:13px;display:block;margin-bottom:6px">Computer Name</label>
+                    <input class="modal-input" id="setPC" placeholder="e.g. DESKTOP-ABC123"/>
+                </div>
+                <div style="margin-bottom:20px">
+                    <label style="color:#aaa;font-size:13px;display:block;margin-bottom:6px">Default Directory (Normal Mode)</label>
+                    <input class="modal-input" id="setDir" placeholder="e.g. C:\Users\JohnDoe"/>
+                </div>
+                <div style="margin-bottom:20px">
+                    <label style="color:#aaa;font-size:13px;display:block;margin-bottom:6px">Backend Endpoint URL (optional)</label>
+                    <input class="modal-input" id="setBackend" placeholder="e.g. http://localhost:9000/exec"/>
+                    <p style="color:#666;font-size:11px;margin-top:4px">POST { command, currentDirectory, isAdmin }</p>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                    <button class="modal-btn modal-btn-secondary" onclick="closeSettings()">Cancel</button>
+                    <button class="modal-btn modal-btn-primary" onclick="saveSettings()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-center">
+        <!-- Mode toggle -->
+        <div class="mode-switcher">
+            <button class="mode-btn active" id="modeNormal" onclick="switchMode('normal')">Normal</button>
+            <button class="mode-btn" id="modeAdmin" onclick="switchMode('admin')">Administrator</button>
+        </div>
+
+        <!-- Terminal lives here -->
+        <div id="termWrap"></div>
+    </div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+
+const VER  = 'Microsoft Windows [Version 10.0.26200.8457]';
+const COPY = '(c) Microsoft Corporation. All rights reserved.';
+const COLS = 120;
+const ROWS = 30;
+
+let mode = 'normal';
+
+let cfg = {
+    user: 'User',
+    pc:   'DESKTOP-PC',
+    dir:  'C:\\Users\\User',
+    backend: ''
+};
+
+let norm = { tabs:[], active:0, nextId:1 };
+
+let adm = {
+    dir:'C:\\Windows\\System32', lines:[], hist:[],
+    hIdx:-1, buf:'', cur:0, saved:''
+};
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════
+
+function loadCfg(){
+    try{const s=JSON.parse(localStorage.getItem('cmdCfg')||'{}');
+        if(s.user)cfg.user=s.user;if(s.pc)cfg.pc=s.pc;
+        if(s.dir)cfg.dir=s.dir;if(s.backend)cfg.backend=s.backend;
+    }catch(e){}
+}
+function saveCfg(){localStorage.setItem('cmdCfg',JSON.stringify(cfg));}
+
+function openSettings(){
+    document.getElementById('setUser').value=cfg.user;
+    document.getElementById('setPC').value=cfg.pc;
+    document.getElementById('setDir').value=cfg.dir;
+    document.getElementById('setBackend').value=cfg.backend;
+    document.getElementById('settingsModal').style.display='flex';
+}
+function closeSettings(){document.getElementById('settingsModal').style.display='none';}
+function saveSettings(){
+    const u=document.getElementById('setUser').value.trim();
+    const p=document.getElementById('setPC').value.trim();
+    const d=document.getElementById('setDir').value.trim();
+    const b=document.getElementById('setBackend').value.trim();
+    if(u)cfg.user=u; if(p)cfg.pc=p; if(d)cfg.dir=d; cfg.backend=b;
+    norm.tabs.forEach(t=>{if(!t.dirChanged)t.dir=cfg.dir;});
+    saveCfg(); closeSettings(); render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB / TERMINAL CREATION
+// ═══════════════════════════════════════════════════════════════
+
+function mkTab(){
+    const t={id:norm.nextId++, label:'Command Prompt',
+        dir:cfg.dir, dirChanged:false,
+        lines:[], hist:[], hIdx:-1, buf:'', cur:0, saved:''};
+    t.lines.push({t:VER},{t:COPY},{t:''});
+    norm.tabs.push(t);
+    norm.active=norm.tabs.length-1;
+    return t;
+}
+function initAdm(){
+    adm.lines=[{t:VER},{t:COPY},{t:''}];
+    adm.dir='C:\\Windows\\System32';
+    adm.buf=''; adm.cur=0; adm.hist=[]; adm.hIdx=-1;
+}
+
+function T(){ // active terminal state
+    if(mode==='admin') return adm;
+    return norm.tabs[norm.active]||norm.tabs[0]||null;
+}
+function prompt(t){ return t.dir+'>'; }
+
+// ═══════════════════════════════════════════════════════════════
+// MODE SWITCH
+// ═══════════════════════════════════════════════════════════════
+
+function switchMode(m){
+    mode=m;
+    document.getElementById('modeNormal').classList.toggle('active',m==='normal');
+    document.getElementById('modeAdmin').classList.toggle('active',m==='admin');
+    if(m==='normal'&&norm.tabs.length===0) mkTab();
+    render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════
+
+function render(){
+    const wrap=document.getElementById('termWrap');
+    const isAdm=mode==='admin';
+    const t=T(); if(!t)return;
+
+    const title=isAdm?'Administrator: Command Prompt':'Command Prompt';
+
+    // --- measure the window size in px ---
+    // charW is approximated; we also clamp to screen
+    const charW=8.41, lineH=18.2;
+    const bodyW=Math.min(COLS*charW+17+12, window.innerWidth-40);   // +scrollbar+padding
+    const bodyH=ROWS*lineH;
+    const tabBarH=isAdm?0:37;
+    const totalH=32+tabBarH+bodyH;                                  // titlebar+tabs+body
+
+    // --- tab bar (normal only) ---
+    let tabsHtml='';
+    if(!isAdm){
+        tabsHtml=`<div class="cmd-tabbar">`+
+            norm.tabs.map((tb,i)=>`
+                <div class="cmd-tab ${i===norm.active?'active':''}" onclick="selTab(${i})">
+                    ${tabIcon()}
+                    <span class="cmd-tab-label">${esc(tb.label)}</span>
+                    <span class="cmd-tab-close" onclick="event.stopPropagation();closeTab(${i})">
+                        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/>
+                        </svg>
+                    </span>
+                </div>`).join('')+
+            `<div class="cmd-tab-new" onclick="addTab()" title="New tab">
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/>
+                </svg>
+            </div></div>`;
+    }
+
+    // --- output lines ---
+    let linesHtml=t.lines.map(l=>
+        `<div class="cmd-line">${l.t===''?'\u00a0':esc(l.t)}</div>`
+    ).join('');
+
+    // --- blank rows to fill remaining space ---
+    const usedRows=t.lines.length+1; // +1 for input line
+    const blankRows=Math.max(0, ROWS-usedRows);
+    const blankLine='\u00a0'.repeat(COLS);
+    let blanksHtml='';
+    for(let i=0;i<blankRows;i++){
+        blanksHtml+=`<div class="cmd-blank-row">${blankLine}</div>`;
+    }
+
+    wrap.innerHTML=`
+    <div class="cmd-window" style="width:${bodyW}px;">
+        <div class="cmd-titlebar ${isAdm?'admin-bar':''}">
+            <div class="cmd-titlebar-left">
+                ${cmdIcon(isAdm)}
+                <span class="cmd-titlebar-title" id="tTitle">${title}</span>
+            </div>
+            <div class="tb-buttons">
+                <button class="tb-btn" title="Minimize">
+                    <svg viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg>
+                </button>
+                <button class="tb-btn" title="Maximize">
+                    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1">
+                        <rect x=".5" y=".5" width="9" height="9"/>
+                    </svg>
+                </button>
+                <button class="tb-btn close" title="Close">
+                    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2">
+                        <line x1="0" y1="0" x2="10" y2="10"/>
+                        <line x1="10" y1="0" x2="0" y2="10"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        ${tabsHtml}
+        <div class="cmd-body cmd-font ${isAdm?'admin-sb':''}" id="cmdBody"
+             style="height:${bodyH}px;"
+             onclick="bodyClick(event)" onmouseup="bodyMouseUp(event)">
+            <div class="cmd-inner" id="cmdInner">
+                <div id="cmdLines">${linesHtml}</div>
+                <div class="cmd-input-line" id="cmdInput"></div>
+                <div id="cmdBlanks">${blanksHtml}</div>
+            </div>
+        </div>
+    </div>`;
+
+    updInput();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UPDATE INPUT LINE (no full re-render)
+// ═══════════════════════════════════════════════════════════════
+
+function updInput(){
+    const t=T(); if(!t)return;
+    const el=document.getElementById('cmdInput'); if(!el)return;
+    const p=prompt(t);
+    const bef=t.buf.substring(0,t.cur);
+    const aft=t.buf.substring(t.cur);
+
+    if(t.cur<t.buf.length){
+        const ch=t.buf[t.cur];
+        const rest=t.buf.substring(t.cur+1);
+        el.innerHTML=esc(p)+esc(bef)+
+            '<span class="cmd-cursor-char">'+esc(ch)+'</span>'+esc(rest);
+    } else {
+        el.innerHTML=esc(p)+esc(bef)+'<span class="cmd-cursor"></span>';
+    }
+}
+
+// Re-render just the output lines
+function updLines(){
+    const t=T(); if(!t)return;
+    const el=document.getElementById('cmdLines'); if(!el)return;
+    el.innerHTML=t.lines.map(l=>
+        `<div class="cmd-line">${l.t===''?'\u00a0':esc(l.t)}</div>`
+    ).join('');
+    updBlanks();
+}
+function updBlanks(){
+    const t=T(); if(!t)return;
+    const el=document.getElementById('cmdBlanks'); if(!el)return;
+    const used=t.lines.length+1;
+    const n=Math.max(0,ROWS-used);
+    const row='\u00a0'.repeat(COLS);
+    let h='';
+    for(let i=0;i<n;i++) h+=`<div class="cmd-blank-row">${row}</div>`;
+    el.innerHTML=h;
+}
+
+function scrollBot(){
+    const b=document.getElementById('cmdBody');
+    if(b) b.scrollTop=b.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// KEYBOARD
+// ═══════════════════════════════════════════════════════════════
+
+document.addEventListener('keydown',function(e){
+    if(document.getElementById('settingsModal').style.display==='flex') return;
+    const t=T(); if(!t) return;
+
+    // Ctrl+Shift+T new tab (normal)
+    if(e.ctrlKey&&e.shiftKey&&e.key==='T'&&mode==='normal'){e.preventDefault();addTab();return;}
+    // Ctrl+W close tab (normal)
+    if(e.ctrlKey&&e.key==='w'&&mode==='normal'){e.preventDefault();closeTab(norm.active);return;}
+    // Ctrl+Tab next tab
+    if(e.ctrlKey&&e.key==='Tab'&&mode==='normal'){
+        e.preventDefault();
+        if(norm.tabs.length>1){norm.active=(norm.active+1)%norm.tabs.length;render();}
+        return;
+    }
+
+    const k=e.key;
+
+    // Ctrl shortcuts first
+    if(e.ctrlKey&&!e.shiftKey){
+        if(k==='c'){
+            e.preventDefault();
+            const sel=window.getSelection();
+            if(sel&&sel.toString().length>0){navigator.clipboard.writeText(sel.toString());}
+            else{
+                t.lines.push({t:prompt(t)+t.buf+'^C'});
+                t.buf='';t.cur=0; updLines();updInput();scrollBot();
+            }
+            return;
+        }
+        if(k==='v'){
+            e.preventDefault();
+            navigator.clipboard.readText().then(tx=>{
+                const c=tx.replace(/\r?\n/g,'');
+                t.buf=t.buf.substring(0,t.cur)+c+t.buf.substring(t.cur);
+                t.cur+=c.length; updInput(); scrollBot();
+            }).catch(()=>{});
+            return;
+        }
+        if(k==='a') return; // allow select-all
+        if(k==='l'){e.preventDefault();t.lines=[];updLines();updInput();return;}
+        return; // ignore other ctrl combos
+    }
+
+    switch(k){
+        case 'Enter':
+            e.preventDefault(); submit(t); break;
+        case 'Backspace':
+            e.preventDefault();
+            if(t.cur>0){t.buf=t.buf.substring(0,t.cur-1)+t.buf.substring(t.cur);t.cur--;updInput();}
+            break;
+        case 'Delete':
+            e.preventDefault();
+            if(t.cur<t.buf.length){t.buf=t.buf.substring(0,t.cur)+t.buf.substring(t.cur+1);updInput();}
+            break;
+        case 'ArrowLeft':
+            e.preventDefault();
+            t.cur=e.ctrlKey?prevWord(t.buf,t.cur):Math.max(0,t.cur-1);
+            updInput(); break;
+        case 'ArrowRight':
+            e.preventDefault();
+            t.cur=e.ctrlKey?nextWord(t.buf,t.cur):Math.min(t.buf.length,t.cur+1);
+            updInput(); break;
+        case 'ArrowUp':
+            e.preventDefault();
+            if(t.hist.length>0){
+                if(t.hIdx===-1){t.saved=t.buf;t.hIdx=t.hist.length-1;}
+                else if(t.hIdx>0) t.hIdx--;
+                t.buf=t.hist[t.hIdx];t.cur=t.buf.length;updInput();
+            } break;
+        case 'ArrowDown':
+            e.preventDefault();
+            if(t.hIdx!==-1){
+                if(t.hIdx<t.hist.length-1){t.hIdx++;t.buf=t.hist[t.hIdx];}
+                else{t.hIdx=-1;t.buf=t.saved||'';}
+                t.cur=t.buf.length;updInput();
+            } break;
+        case 'Home': e.preventDefault(); t.cur=0; updInput(); break;
+        case 'End':  e.preventDefault(); t.cur=t.buf.length; updInput(); break;
+        case 'Escape': e.preventDefault(); t.buf='';t.cur=0; updInput(); break;
+        default:
+            if(k.length===1&&!e.altKey&&!e.metaKey){
+                e.preventDefault();
+                t.buf=t.buf.substring(0,t.cur)+k+t.buf.substring(t.cur);
+                t.cur++; updInput(); scrollBot();
+            }
+            break;
+    }
+});
+
+function prevWord(s,p){if(p<=0)return 0;let i=p-1;while(i>0&&s[i]===' ')i--;while(i>0&&s[i-1]!==' ')i--;return i;}
+function nextWord(s,p){if(p>=s.length)return s.length;let i=p;while(i<s.length&&s[i]!==' ')i++;while(i<s.length&&s[i]===' ')i++;return i;}
+
+// ═══════════════════════════════════════════════════════════════
+// COMMAND SUBMISSION
+// ═══════════════════════════════════════════════════════════════
+
+async function submit(t){
+    const raw=t.buf;
+    const cmd=raw.trim();
+    t.lines.push({t:prompt(t)+raw});
+    if(cmd&&(t.hist.length===0||t.hist[t.hist.length-1]!==cmd)) t.hist.push(cmd);
+    t.hIdx=-1; t.buf=''; t.cur=0;
+
+    if(!cmd){ updLines();updInput();scrollBot();return; }
+
+    const parts=cmd.split(/\s+/);
+    const cn=parts[0].toLowerCase();
+
+    if(cn==='cls'){t.lines=[];updLines();updInput();scrollBot();return;}
+    if(cn==='exit'){
+        if(mode==='admin'){initAdm();render();}else closeTab(norm.active);return;
+    }
+    if(cn==='cd'||cn==='chdir'){
+        if(parts.length>=2){
+            const tgt=parts.slice(1).join(' ').replace(/"/g,'');
+            if(tgt==='..'){const p=t.dir.split('\\');if(p.length>1){p.pop();t.dir=p.join('\\')||p[0]+'\\';}}
+            else if(tgt==='\\'||tgt==='/'){t.dir=t.dir.substring(0,3);}
+            else if(/^[A-Za-z]:\\/.test(tgt)){t.dir=tgt;}
+            else{t.dir=t.dir.replace(/\\$/,'')+('\\'+tgt);}
+            if(t.dirChanged!==undefined)t.dirChanged=true;
+        }else{t.lines.push({t:t.dir});}
+        updLines();updInput();scrollBot();
+        if(cfg.backend) fwd(cmd,t);
+        return;
+    }
+    if(cn==='title'&&mode==='normal'){
+        const nt=parts.slice(1).join(' ');if(nt)t.label=nt;render();return;
+    }
+
+    if(cfg.backend){ await fwd(cmd,t); }
+    else{
+        t.lines.push({t:"'"+parts[0]+"' is not recognized as an internal or external command,"});
+        t.lines.push({t:'operable program or batch file.'});
+    }
+    updLines();updInput();updBlanks();scrollBot();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BACKEND
+// ═══════════════════════════════════════════════════════════════
+
+async function fwd(cmd,t){
+    try{
+        const r=await fetch(cfg.backend,{method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({command:cmd,currentDirectory:t.dir,isAdmin:mode==='admin',username:cfg.user})});
+        if(r.ok){
+            const d=await r.json();
+            if(d.output) d.output.split('\n').forEach(l=>t.lines.push({t:l.replace(/\r$/,'')}));
+            if(d.error)  d.error.split('\n').forEach(l=>t.lines.push({t:l.replace(/\r$/,'')}));
+            if(d.newDirectory){t.dir=d.newDirectory;if(t.dirChanged!==undefined)t.dirChanged=true;}
+        }else t.lines.push({t:'Backend error: '+r.status});
+    }catch(e){t.lines.push({t:'Connection failed: '+e.message});}
+    updLines();updInput();updBlanks();scrollBot();
+}
+
+// global injection
+window.cmdPushOutput=function(txt){const t=T();if(!t)return;
+    txt.split('\n').forEach(l=>t.lines.push({t:l.replace(/\r$/,'')}));updLines();updBlanks();scrollBot();};
+window.cmdPushError=window.cmdPushOutput;
+
+// ═══════════════════════════════════════════════════════════════
+// TABS (normal only)
+// ═══════════════════════════════════════════════════════════════
+
+function selTab(i){if(mode!=='normal')return;norm.active=i;render();}
+function addTab(){if(mode!=='normal')return;mkTab();render();}
+function closeTab(i){
+    if(mode!=='normal')return;
+    if(norm.tabs.length<=1){
+        const t=norm.tabs[0];
+        t.lines=[{t:VER},{t:COPY},{t:''}];t.buf='';t.cur=0;t.hist=[];render();return;
+    }
+    norm.tabs.splice(i,1);
+    if(norm.active>=norm.tabs.length)norm.active=norm.tabs.length-1;
+    render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CLICK & SELECTION
+// ═══════════════════════════════════════════════════════════════
+
+let hl=null;
+
+function bodyClick(e){
+    // remove previous click-highlight
+    if(hl){hl.remove();hl=null;}
+
+    const inner=document.getElementById('cmdInner');
+    if(!inner)return;
+
+    // Spawn a white caret wherever the user clicks.
+    // We snap to the character grid so it feels like real cmd.
+    const rect=inner.getBoundingClientRect();
+    const body=document.getElementById('cmdBody');
+    const charW=8.41, lineH=18.2;
+
+    const relX=e.clientX-rect.left;
+    const relY=e.clientY-rect.top + (body?body.scrollTop:0);
+
+    const sx=Math.floor(relX/charW)*charW;
+    const sy=Math.floor(relY/lineH)*lineH;
+
+    const d=document.createElement('div');
+    d.className='cmd-click-hl';
+    d.style.left=sx+'px';
+    d.style.top=sy+'px';
+    inner.appendChild(d);
+    hl=d;
+
+    // auto-remove after a few seconds or on next keypress
+    setTimeout(()=>{if(hl===d){d.remove();hl=null;}},4000);
+}
+
+// Remove click-hl on key
+document.addEventListener('keydown',()=>{if(hl){hl.remove();hl=null;}},true);
+
+function bodyMouseUp(){
+    // "Select" title prefix — admin only
+    if(mode!=='admin')return;
+    const sel=window.getSelection();
+    const el=document.getElementById('tTitle');if(!el)return;
+    const base='Administrator: Command Prompt';
+    if(sel&&sel.toString().length>0){
+        const body=document.getElementById('cmdBody');
+        if(body&&body.contains(sel.anchorNode)) el.textContent='Select '+base;
+    }else el.textContent=base;
+}
+document.addEventListener('selectionchange',()=>{
+    if(mode!=='admin')return;
+    const sel=window.getSelection();
+    const el=document.getElementById('tTitle');if(!el)return;
+    const base='Administrator: Command Prompt';
+    if(sel&&sel.toString().length>0){
+        const body=document.getElementById('cmdBody');
+        if(body&&body.contains(sel.anchorNode)){el.textContent='Select '+base;return;}
+    }
+    el.textContent=base;
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ICONS
+// ═══════════════════════════════════════════════════════════════
+
+function cmdIcon(isAdm){
+    const c=isAdm?'#000':'#ccc', bg=isAdm?'#fff':'#1a1a1a';
+    let badge='';
+    if(isAdm) badge=`<svg viewBox="0 0 10 10" style="width:8px;height:8px;position:absolute;bottom:-2px;right:-2px">
+        <polygon points="5,1 9,8 1,8" fill="#f0d000" stroke="#000" stroke-width=".5"/></svg>`;
+    return `<div style="width:16px;height:16px;flex-shrink:0;position:relative">
+        <svg viewBox="0 0 16 16" fill="none" style="width:16px;height:16px">
+            <rect x="1" y="3" width="14" height="11" rx="1" fill="${bg}" stroke="${c}" stroke-width=".8"/>
+            <text x="3" y="11" fill="${c}" font-size="7" font-family="Consolas,monospace" font-weight="bold">C:\\</text>
+        </svg>${badge}</div>`;
+}
+function tabIcon(){
+    return `<svg style="width:14px;height:14px;flex-shrink:0" viewBox="0 0 14 14" fill="none">
+        <rect x="1" y="3" width="12" height="9" rx="1" stroke="currentColor" stroke-width=".8"/>
+        <text x="3" y="10" fill="currentColor" font-size="5" font-family="Consolas,monospace">C:\\</text></svg>`;
+}
+
+function esc(s){const d=document.createElement('span');d.textContent=s;return d.innerHTML;}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+
+loadCfg(); mkTab(); initAdm(); render();
+</script>
+</body>
+</html>
