@@ -106,6 +106,7 @@ namespace CommandPrompt
             finally { Dispose(); }
         }
 
+        // ═══ PIPE ════════════════════════════════════════════════════════
         int RunPipe()
         {
             if (!ConnPipe())
@@ -199,9 +200,12 @@ namespace CommandPrompt
                 text = sb.ToString();
                 if (string.IsNullOrEmpty(text)) return;
             }
+            // Strip both prompt styles from relay.
+            // DO NOT censor here again — command guard and file sanitizers already
+            // handle banned references. Inline display censoring was breaking
+            // normal shell output like "external command" and echo output.
             text = CmdPromptStrip.Replace(text, "");
             text = PsPromptStrip.Replace(text, "");
-            text = _censor.Replace(text, "");
             if (!string.IsNullOrEmpty(text))
             {
                 Out(text);
@@ -209,6 +213,7 @@ namespace CommandPrompt
             }
         }
 
+        // ═══ CONSOLE ═════════════════════════════════════════════════════
         void InitConsole()
         {
             try
@@ -239,17 +244,24 @@ namespace CommandPrompt
             try
             {
                 string ico = "";
+
+                // 1) Explicit --icon argument (most reliable — Seiware passes full path)
                 if (!string.IsNullOrEmpty(_iconPath) && File.Exists(_iconPath))
                 { ico = _iconPath; }
                 else
                 {
+                    // 2) Try next to our own exe
                     string exeDir = Path.GetDirectoryName(Environment.ProcessPath ?? "") ?? "";
                     string icoName = IsPS ? "powershell.ico" : "cmdterminal.ico";
+
                     ico = Path.Combine(exeDir, icoName);
                     if (!File.Exists(ico)) ico = Path.Combine(exeDir, "cmdterminal.ico");
+
+                    // 3) Try AppContext.BaseDirectory (different for single-file publish)
                     if (!File.Exists(ico)) ico = Path.Combine(AppContext.BaseDirectory, icoName);
                     if (!File.Exists(ico)) ico = Path.Combine(AppContext.BaseDirectory, "cmdterminal.ico");
                 }
+
                 if (!File.Exists(ico)) return;
                 IntPtr h = LoadImage(IntPtr.Zero, ico, 1, 0, 0, 0x10);
                 if (h != IntPtr.Zero) { SendMessage(hwnd, 0x80, IntPtr.Zero, h); SendMessage(hwnd, 0x80, (IntPtr)1, h); }
@@ -304,6 +316,7 @@ namespace CommandPrompt
             Console.WriteLine(t);
         }
 
+        // ═══ INPUT ═══════════════════════════════════════════════════════
         void InputLoop() { while (_run) { if (!Console.KeyAvailable) { Thread.Sleep(10); continue; } Key(Console.ReadKey(true)); } }
 
         void Key(ConsoleKeyInfo k)

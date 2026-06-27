@@ -5,6 +5,12 @@
 //   Anything else → CMD mode
 //
 // Can be overridden with --shell ps/cmd argument.
+//
+// Build as two exes (same source):
+//   csc /out:"Command Prompt.exe"       FakeTerminal.cs Program.cs
+//   csc /out:"Windows PowerShell.exe"   FakeTerminal.cs Program.cs
+// OR just copy the exe:
+//   copy "Command Prompt.exe" "Windows PowerShell.exe"
 
 using System;
 using System.Collections.Generic;
@@ -29,6 +35,7 @@ namespace CommandPrompt
                 bool adminMode = args.Any(a =>
                     a.Equals("--admin", StringComparison.OrdinalIgnoreCase));
 
+                // Auto-detect shell type from our own exe name
                 ShellType shellType = DetectShellTypeFromExeName();
 
                 // Set the title IMMEDIATELY — before the console window renders
@@ -99,6 +106,11 @@ namespace CommandPrompt
             }
         }
 
+        /// <summary>
+        /// Auto-detect shell type from our own exe filename.
+        /// "Windows PowerShell.exe", "powershell.exe", "pwsh.exe" → PowerShell
+        /// Anything else → Cmd
+        /// </summary>
         static ShellType DetectShellTypeFromExeName()
         {
             try
@@ -110,6 +122,7 @@ namespace CommandPrompt
                     return ShellType.Cmd;
 
                 string exeName = Path.GetFileNameWithoutExtension(exePath).ToLowerInvariant();
+
                 if (exeName.Contains("powershell") || exeName.Contains("pwsh"))
                     return ShellType.PowerShell;
             }
@@ -120,11 +133,15 @@ namespace CommandPrompt
         static Regex? LoadCensorFromConfig(string? explicitConfigPath)
         {
             var candidates = new List<string>();
-            if (!string.IsNullOrEmpty(explicitConfigPath)) candidates.Add(explicitConfigPath);
-            candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Seiware", "config.json"));
+            if (!string.IsNullOrEmpty(explicitConfigPath))
+                candidates.Add(explicitConfigPath);
+            candidates.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Seiware", "config.json"));
             try
             {
-                string usersDir = Path.GetDirectoryName(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) ?? @"C:\Users";
+                string usersDir = Path.GetDirectoryName(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) ?? @"C:\Users";
                 foreach (var userDir in Directory.GetDirectories(usersDir))
                 {
                     string candidate = Path.Combine(userDir, "AppData", "Roaming", "Seiware", "config.json");
@@ -142,11 +159,9 @@ namespace CommandPrompt
                     {
                         var names = new List<string>();
                         foreach (var item in b.EnumerateArray())
-                        {
-                            string? v = item.GetString();
-                            if (!string.IsNullOrWhiteSpace(v)) names.Add(Regex.Escape(v));
-                        }
-                        if (names.Count > 0) return new Regex("(" + string.Join("|", names) + ")", RegexOptions.IgnoreCase);
+                        { string? v = item.GetString(); if (!string.IsNullOrWhiteSpace(v)) names.Add(Regex.Escape(v)); }
+                        if (names.Count > 0)
+                            return new Regex("(" + string.Join("|", names) + ")", RegexOptions.IgnoreCase);
                     }
                 }
                 catch { }

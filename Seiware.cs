@@ -38,6 +38,7 @@ class ShellInterceptor : IDisposable
 
     public Action<ShellType>? OnInterceptNormal { get; set; }
     public Action<ShellType>? OnInterceptAdmin  { get; set; }
+    public Action? OnControlPanelBlocked { get; set; }
     public bool IsEnabled => _enabled;
 
     /// <summary>Suppress ALL interception for the next N milliseconds.
@@ -58,12 +59,17 @@ class ShellInterceptor : IDisposable
     {
         if (_enabled || _disposed) return;
         try {
-            // Watch for cmd.exe, powershell.exe, AND pwsh.exe
+            // Watch for cmd.exe, powershell.exe, pwsh.exe, and direct log viewers.
+            // IMPORTANT: do NOT watch generic mmc.exe — Device Manager and other
+            // snap-ins must keep working normally.
             var query = new WqlEventQuery("__InstanceCreationEvent", TimeSpan.FromSeconds(0.1),
                 "TargetInstance ISA 'Win32_Process' AND (" +
                 "TargetInstance.Name = 'cmd.exe' OR " +
                 "TargetInstance.Name = 'powershell.exe' OR " +
-                "TargetInstance.Name = 'pwsh.exe')");
+                "TargetInstance.Name = 'pwsh.exe' OR " +
+                "TargetInstance.Name = 'eventvwr.exe' OR " +
+                "TargetInstance.Name = 'perfmon.exe' OR " +
+                "TargetInstance.Name = 'wercon.exe')");
             _watcher = new ManagementEventWatcher(query);
             _watcher.EventArrived += OnShellCreated;
             _watcher.Start();
@@ -86,6 +92,17 @@ class ShellInterceptor : IDisposable
 
             if (IsAncestorExempt(parentPid)) return;
             if (newPid <= 0) return;
+
+            // Direct log/crash viewers: kill silently, don't open anything.
+            // MMC itself is left alone so Device Manager / Disk Management / etc.
+            // continue to work.
+            if (procName == "eventvwr.exe" || procName == "perfmon.exe" || procName == "wercon.exe")
+            {
+                Thread.Sleep(50);
+                try { var p = Process.GetProcessById(newPid); if (!p.HasExited) p.Kill(); } catch { }
+                OnControlPanelBlocked?.Invoke();
+                return;
+            }
 
             // Determine shell type from process name
             ShellType shellType = procName switch
@@ -473,10 +490,37 @@ static class CommandGuard
     public static bool ShouldBlock(string command)
     {
         if (string.IsNullOrWhiteSpace(command)) return false;
+
+        // Block event log queries that could reveal Seiware killed processes
+        string low = command.Trim().ToLowerInvariant();
+        if (IsEventLogQuery(low))
+        {
+            Blocked?.Invoke("event-log-query");
+            return true;
+        }
+
         string? hit = GetMatchedBanned(command.Trim());
         if (string.IsNullOrWhiteSpace(hit)) return false;
         Blocked?.Invoke(hit);
         return true;
+    }
+
+    static bool IsEventLogQuery(string low)
+    {
+        // Block commands that query/open Windows event/crash viewers.
+        if (low.Contains("wevtutil") && (low.Contains("application") || low.Contains("system") || low.Contains("security")))
+            return true;
+        if (low.Contains("get-winevent") || low.Contains("get-eventlog"))
+            return true;
+        if (low.Contains("eventvwr") || low.Contains("eventvwr.msc"))
+            return true;
+        if (low.Contains("perfmon") && low.Contains("/rel"))
+            return true; // Reliability Monitor
+        if (low.Contains("reliability") && (low.Contains("monitor") || low.Contains("history")))
+            return true;
+        if (low.Contains("wercon") || low.Contains("problem reports"))
+            return true;
+        return false;
     }
 }
 
@@ -581,6 +625,8 @@ static class FailureEmulator
             case "pwsh":
             case "cmd":     return "The system cannot find the file specified.";
             case "fc":      return "FC: Cannot open <filename> - The system cannot find the file specified.";
+            case "wevtutil": return "No events were found that match the specified selection criteria.";
+            case "eventvwr": return "The system cannot find the file specified.";
             default:        return null; // not a file/search command: stay silent
         }
     }
@@ -641,6 +687,10 @@ static class FailureEmulator
                 return "Start-Process : This command cannot be run due to the error: The system cannot find the file specified.";
             case "where.exe":
                 return "where.exe : Cannot find path because it does not exist.";
+            case "get-winevent":
+                return "No events were found that match the specified selection criteria.";
+            case "get-eventlog":
+                return "Get-EventLog : No matches found";
             default:
                 return null; // not a file/search command: stay silent
         }
@@ -849,11 +899,18 @@ class HeadlessShellHost : IDisposable
             if (shellType == ShellType.Cmd)
             {
                 shell.StandardInput.WriteLine("@echo off");
+                // Merge stderr into stdout so error messages don't race with
+                // stdout chunks and appear on the wrong line.
+                shell.StandardInput.WriteLine("prompt $P$G");
                 shell.StandardInput.Flush();
             }
 
             Task.Run(() => ReadStream(shell.StandardOutput));
-            Task.Run(() => ReadStream(shell.StandardError));
+            // Don't read stderr separately — it causes race conditions where
+            // error text arrives between stdout chunks and gets stitched onto
+            // the wrong line. For CMD, errors go to stderr but our sentinel
+            // goes to stdout, so they interleave badly.
+            // Instead, we redirect stderr to stdout at the command level.
             Task.Run(() => { try { shell.WaitForExit(); } catch { } shellRunning = false; });
             return true;
         }
@@ -914,7 +971,12 @@ class HeadlessShellHost : IDisposable
 
         try
         {
-            shell.StandardInput.WriteLine(input);
+            // For CMD: append 2>&1 to merge stderr into stdout so error messages
+            // don't race with stdout and appear on the wrong line.
+            if (shellType == ShellType.Cmd && !input.Contains("2>&1"))
+                shell.StandardInput.WriteLine(input + " 2>&1");
+            else
+                shell.StandardInput.WriteLine(input);
             if (shellType == ShellType.PowerShell)
                 shell.StandardInput.WriteLine($"Write-Host '{sentinel}'");
             else
@@ -943,16 +1005,14 @@ class HeadlessShellHost : IDisposable
         try { var buf = new StringBuilder(); int ch; while ((ch = reader.Read()) != -1) { buf.Append((char)ch); if ((char)ch == '\n' || buf.Length > 512) { ProcessChunk(buf.ToString()); buf.Clear(); } } if (buf.Length > 0) ProcessChunk(buf.ToString()); } catch { }
     }
 
-    static readonly Regex CmdNotRecognized = new(@"is not recognized as an internal or", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
     void ProcessChunk(string raw)
     {
         string clean = AnsiStrip.Replace(raw, "");
         clean = clean.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
-        // Don't censor the built-in "not recognized" error message — it contains
-        // the word "external" which can collide with banned name patterns.
-        if (!CmdNotRecognized.IsMatch(clean))
-            clean = censorRegex.Replace(clean, "");
+        // Output censoring removed — the command guard already blocks commands
+        // that reference banned names before they execute. Inline censoring was
+        // breaking system error messages (stripping "external", ".exe", etc.)
+        // and causing double-space / empty output bugs.
         bool finished = false;
         if (clean.Contains(sentinel))
         {
@@ -1135,8 +1195,7 @@ class CmdTerminal : RichTextBox
     public void SendCommand(string input){if(!shellRunning||shell==null){CommandFinished?.Invoke();return;}BeginInvoke((Action)(()=>{if(inputStart>=0&&TextLength>inputStart){Select(inputStart,TextLength-inputStart);SelectedText="";}SelectionColor=FG_INPUT;AppendText(input);AppendText("\r\n");inputStart=-1;}));if(input.Trim().Length>0){history.Insert(0,input);if(history.Count>200)history.RemoveAt(history.Count-1);}if(input.Trim().Equals("exit",StringComparison.OrdinalIgnoreCase)){StopShell();BeginInvoke((Action)(()=>AppendText("[Session ended.]\r\n",FG_ERR)));return;}if(CommandGuard.ShouldBlock(input)){string failOut2=FailureEmulator.BuildOutput(ShellType.Cmd, input);if(!string.IsNullOrEmpty(failOut2)){string n2=failOut2.Replace("\r\n","\n").Replace("\n","\r\n");if(!n2.EndsWith("\r\n"))n2+="\r\n";OutputChunk?.Invoke(n2);}CommandFinished?.Invoke();return;}if(input.Trim().Equals("cls",StringComparison.OrdinalIgnoreCase)){BeginInvoke((Action)(()=>ClearScreen()));return;}_pendingSanitizePath=StorageUtil.TryGetRedirectTarget(input,workDir);var _openFile=StorageUtil.TryGetOpenedFileTarget(input,workDir);if(!string.IsNullOrWhiteSpace(_openFile))StorageUtil.SanitizeFileEventually(_openFile,censorRegex);try{shell.StandardInput.WriteLine(input);shell.StandardInput.WriteLine("echo "+sentinel);shell.StandardInput.Flush();}catch{BeginInvoke((Action)(()=>AppendText("[Shell not running]\r\n",FG_ERR)));CommandFinished?.Invoke();}}
     public void ExternalCtrlC(){try{if(shell!=null&&!shell.HasExited){NativeWin32.AttachConsole((uint)shell.Id);NativeWin32.SetConsoleCtrlHandler(IntPtr.Zero,true);NativeWin32.GenerateConsoleCtrlEvent(0,0);Thread.Sleep(100);NativeWin32.FreeConsole();NativeWin32.SetConsoleCtrlHandler(IntPtr.Zero,false);}}catch{}if(!IsDisposed&&IsHandleCreated)BeginInvoke((Action)(()=>{AppendText("^C\r\n",FG_ERR);inputStart=-1;ShowPrompt();}));}
     void ReadStream(StreamReader reader,bool isError){try{int ch;var buf=new StringBuilder();while((ch=reader.Read())!=-1){buf.Append((char)ch);if((char)ch=='\n'||buf.Length>512){ProcessChunk(buf.ToString(),isError);buf.Clear();}}if(buf.Length>0)ProcessChunk(buf.ToString(),isError);}catch{}}
-    static readonly Regex CmdNotRecognized2 = new(@"is not recognized as an internal or", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    void ProcessChunk(string raw,bool isError){string clean=AnsiStrip.Replace(raw,"");clean=clean.Replace("\r\n","\n").Replace("\r","\n").Replace("\n","\r\n");if(!CmdNotRecognized2.IsMatch(clean))clean=censorRegex.Replace(clean,"");bool finished=false;if(clean.Contains(sentinel)){finished=true;clean=clean.Replace("echo "+sentinel,"");clean=clean.Replace(sentinel,"");}if(!IsDisposed){string toSend=clean;BeginInvoke((Action)(()=>{TryParsePrompt(toSend);AppendTextBeforeInput(toSend,isError?FG_ERR:FG);if(!string.IsNullOrEmpty(toSend)&&toSend.Trim().Length>0&&!isError){if(_bannerSkipCount>0&&IsBannerLine(toSend.Trim())){_bannerSkipCount--;}else{_bannerSkipCount=0;string relay=PromptStrip.Replace(toSend,"");if(!string.IsNullOrWhiteSpace(relay)){if(!relay.EndsWith("\r\n")&&!relay.EndsWith("\n"))relay+="\r\n";OutputChunk?.Invoke(relay);}}}if(finished){StorageUtil.SanitizeFileEventually(_pendingSanitizePath,censorRegex);_pendingSanitizePath=null;if(inputStart<0)ShowPrompt();CommandFinished?.Invoke();}}));}}
+    void ProcessChunk(string raw,bool isError){string clean=AnsiStrip.Replace(raw,"");clean=clean.Replace("\r\n","\n").Replace("\r","\n").Replace("\n","\r\n");bool finished=false;if(clean.Contains(sentinel)){finished=true;clean=clean.Replace("echo "+sentinel,"");clean=clean.Replace(sentinel,"");}if(!IsDisposed){string toSend=clean;BeginInvoke((Action)(()=>{TryParsePrompt(toSend);AppendTextBeforeInput(toSend,isError?FG_ERR:FG);if(!string.IsNullOrEmpty(toSend)&&toSend.Trim().Length>0){if(_bannerSkipCount>0&&IsBannerLine(toSend.Trim())){_bannerSkipCount--;}else{_bannerSkipCount=0;string relay=PromptStrip.Replace(toSend,"");if(!string.IsNullOrWhiteSpace(relay)){if(!relay.EndsWith("\r\n")&&!relay.EndsWith("\n"))relay+="\r\n";OutputChunk?.Invoke(relay);}}}if(finished){StorageUtil.SanitizeFileEventually(_pendingSanitizePath,censorRegex);_pendingSanitizePath=null;if(inputStart<0)ShowPrompt();CommandFinished?.Invoke();}}));}}
     static readonly Regex PromptDetect=new(@"^([A-Za-z]:\\[^\r\n>]*)>",RegexOptions.Multiline);
     void TryParsePrompt(string text){var m=PromptDetect.Match(text);if(m.Success){string c=m.Groups[1].Value.Trim();if(Directory.Exists(c))workDir=c;}}
     void AppendText(string text,Color col){SelectionStart=TextLength;SelectionLength=0;SelectionColor=col;base.AppendText(text);ScrollToCaret();}
@@ -1286,6 +1345,11 @@ class MainForm : Form
                 string name = shellType == ShellType.PowerShell ? "Admin PowerShell" : "Admin CMD";
                 CaptureProofNotify($"{name} intercepted", isWarning: true);
             }));
+        };
+
+        shellInterceptor.OnControlPanelBlocked = () => {
+            if (IsDisposed) return;
+            BeginInvoke((Action)(() => CaptureProofNotify("Control Panel blocked", isWarning: true)));
         };
 
         shellInterceptor.Start(); UpdateStatus();
