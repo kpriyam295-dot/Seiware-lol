@@ -3,8 +3,16 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <AssemblyName>Windows PowerShell</AssemblyName>
-    <ApplicationIcon>powershell.ico</ApplicationIcon>
+    <RootNamespace>CommandPrompt</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationIcon Condition="Exists('powershell.ico')">powershell.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\src\FakeTerminal.cs" Link="FakeTerminal.cs" />
+    <Compile Include="..\src\Program.cs" Link="Program.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="powershell.ico" CopyToOutputDirectory="PreserveNewest" Condition="Exists('powershell.ico')" />
+  </ItemGroup>
 </Project>

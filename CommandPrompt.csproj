@@ -1,20 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <AssemblyName>Command Prompt</AssemblyName>
+    <AssemblyName>Terminal</AssemblyName>
     <RootNamespace>CommandPrompt</RootNamespace>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <UseWindowsForms>false</UseWindowsForms>
-    
-    <!-- Assembly metadata -->
-    <Product>Microsoft Windows Operating System</Product>
-    <Company>Microsoft Corporation</Company>
-    <Description>Windows Command Processor</Description>
-    <FileVersion>10.0.22621.1</FileVersion>
-    <AssemblyVersion>10.0.22621.1</AssemblyVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationIcon Condition="Exists('cmdterminal.ico')">cmdterminal.ico</ApplicationIcon>
+    <ApplicationIcon Condition="Exists('terminal.ico') And !Exists('cmdterminal.ico')">terminal.ico</ApplicationIcon>
   </PropertyGroup>
-
+  <ItemGroup>
+    <Content Include="cmdterminal.ico" CopyToOutputDirectory="PreserveNewest" Condition="Exists('cmdterminal.ico')" />
+    <Content Include="terminal.ico" CopyToOutputDirectory="PreserveNewest" Condition="Exists('terminal.ico')" />
+  </ItemGroup>
 </Project>
