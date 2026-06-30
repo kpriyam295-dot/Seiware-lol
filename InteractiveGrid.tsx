@@ -13,10 +13,10 @@ interface Vertex {
 const CELL = 32;
 const HOVER_RADIUS = 220;
 const HOVER_STRENGTH = 70;
-const CLICK_STRENGTH = 100;
+const CLICK_STRENGTH = 200;
 const SPRING = 0.016;
-const DAMPING = 0.92;
-const NEIGHBOR_TRANSFER = 0.22;
+const DAMPING = 0.93;
+const NEIGHBOR_TRANSFER = 0.28;
 const PERSPECTIVE_D = 900;
 const SCAN_PERIOD = 5000;
 const SCAN_GLOW_WIDTH = 120;
@@ -78,10 +78,10 @@ export default function InteractiveGrid() {
 
     const onClick = (e: MouseEvent) => {
       const now = performance.now();
-      if (now - lastClickTime < 250) return;
+      if (now - lastClickTime < 150) return;
       lastClickTime = now;
-      clicks = clicks.filter(c => now - c.time < 4000);
-      if (clicks.length < 5) {
+      clicks = clicks.filter(c => now - c.time < 6000);
+      if (clicks.length < 8) {
         clicks.push({ x: e.clientX, y: e.clientY, time: now });
       }
     };
@@ -142,12 +142,12 @@ export default function InteractiveGrid() {
             const cdy = click.y - v.baseY;
             const cDist = Math.sqrt(cdx * cdx + cdy * cdy);
             const elapsed = (time - click.time) / 1000;
-            const waveRadius = elapsed * 320;
+            const waveRadius = elapsed * 400;
             const waveDist = Math.abs(cDist - waveRadius);
-            if (waveDist < 160) {
-              const envelope = Math.sin((1 - waveDist / 160) * Math.PI);
-              const decay = Math.max(0, 1 - elapsed * 0.45);
-              v.vz += (envelope * CLICK_STRENGTH * decay - v.z) * 0.025;
+            if (waveDist < 220) {
+              const envelope = Math.sin((1 - waveDist / 220) * Math.PI);
+              const decay = Math.max(0, 1 - elapsed * 0.3);
+              v.vz += (envelope * CLICK_STRENGTH * decay - v.z) * 0.04;
             }
           }
 
@@ -175,7 +175,7 @@ export default function InteractiveGrid() {
         }
       }
 
-      clicks = clicks.filter(cl => time - cl.time < 5000);
+      clicks = clicks.filter(cl => time - cl.time < 7000);
 
       // ════════════════ RENDER ════════════════
       ctx.clearRect(0, 0, w, h);
@@ -389,6 +389,10 @@ export default function InteractiveGrid() {
   }, []); // Empty deps — reads theme from ref
 
   return (
-    <canvas ref={canvasRef} className="fixed inset-0 z-0 pointer-events-none" />
+    <canvas
+      ref={canvasRef}
+      className="fixed inset-0 z-0"
+      style={{ background: 'transparent' }}
+    />
   );
 }

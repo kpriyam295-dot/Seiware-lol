@@ -22,7 +22,7 @@ export default function ControlPanel() {
 
   const handleTitleChange = (val: string) => {
     setLocalTitle(val);
-    setTitle(val || 'NEXUS');
+    setTitle(val || 'DREAMLAND');
   };
 
   const handleFactChange = (val: string) => {

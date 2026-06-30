@@ -42,7 +42,11 @@ export default function LoadingScreen({ onDone }: { onDone: () => void }) {
       {/* Title */}
       <div
         className="text-3xl font-black tracking-[0.4em] font-mono mb-8"
-        style={{ color: `rgb(${c})` }}
+        style={{
+          color: 'transparent',
+          WebkitTextStroke: `1.5px rgb(${c})`,
+          textShadow: `0 0 30px rgba(${c}, 0.3)`,
+        }}
       >
         {theme.title}_
       </div>

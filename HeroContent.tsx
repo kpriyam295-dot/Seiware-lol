@@ -1,5 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useTheme } from '../ThemeContext';
+import { TabName } from './TabPanel';
+
+interface HeroContentProps {
+  onTabOpen: (tab: TabName) => void;
+}
 
 const glitchText = (text: string) => {
   const chars = '!@#$%^&*()_+-=[]{}|;:,.<>?/~`';
@@ -7,19 +12,21 @@ const glitchText = (text: string) => {
 };
 
 const DEFAULT_FACTS = [
-  'The grid has over 1,500 interactive vertices reacting in real-time.',
-  'Each vertex runs its own spring physics simulation every frame.',
-  'Click ripples propagate outward at 320 pixels per second.',
-  'The cloth simulation uses neighbor-coupled springs for realism.',
-  'Your cursor creates a force field with a 220px radius.',
-  'The grid refreshes 60 times per second at full speed.',
-  'Every intersection has its own velocity and height value.',
-  'The perspective projection simulates a 900mm focal length.',
-  'A scan line sweeps the entire grid every 5 seconds.',
-  'The ambient wave uses sinusoidal functions for organic motion.',
+  'The system sees everything. The grid never sleeps.',
+  'Every node is a heartbeat. Every pulse is a signal.',
+  'Click anywhere. Watch the shockwave ripple through reality.',
+  'You are the cursor. The grid bends to your will.',
+  'Built different. Engineered for those who push boundaries.',
+  'The future doesn\'t wait. Neither should you.',
+  'Chaos is just order waiting to be discovered.',
+  'Not all who wander the grid are lost.',
+  'Precision is not perfection — it\'s intention.',
+  'Some see a grid. Others see infinite possibility.',
+  'Every frame is a conversation between code and canvas.',
+  'Break the pattern. Rewrite the signal.',
 ];
 
-export default function HeroContent() {
+export default function HeroContent({ onTabOpen }: HeroContentProps) {
   const { theme } = useTheme();
   const [displayedText, setDisplayedText] = useState('');
   const [isGlitching, setIsGlitching] = useState(false);
@@ -70,14 +77,17 @@ export default function HeroContent() {
     return () => clearInterval(interval);
   }, [theme.funFact]);
 
-  // Dynamic font size
+  // Dynamic font size — scales smoothly with both title length and viewport
   const titleFontSize = useMemo(() => {
     const len = theme.title.length;
-    if (len <= 4) return 'clamp(5rem, 14vw, 10rem)';
-    if (len <= 6) return 'clamp(4rem, 12vw, 9rem)';
-    if (len <= 8) return 'clamp(3rem, 10vw, 7rem)';
-    if (len <= 12) return 'clamp(2.2rem, 7vw, 5rem)';
-    return 'clamp(1.5rem, 5vw, 3.5rem)';
+    if (len <= 3) return 'clamp(4rem, 15vw, 11rem)';
+    if (len <= 5) return 'clamp(3.5rem, 13vw, 9rem)';
+    if (len <= 7) return 'clamp(2.8rem, 11vw, 7.5rem)';
+    if (len <= 9) return 'clamp(2.2rem, 9vw, 6rem)';
+    if (len <= 12) return 'clamp(1.8rem, 7vw, 4.5rem)';
+    if (len <= 16) return 'clamp(1.4rem, 5.5vw, 3.5rem)';
+    if (len <= 20) return 'clamp(1.1rem, 4.5vw, 2.8rem)';
+    return 'clamp(0.9rem, 3.5vw, 2.2rem)';
   }, [theme.title]);
 
   const stats = [
@@ -91,156 +101,168 @@ export default function HeroContent() {
     <>
       {/* Blur overlay */}
       {theme.blurEnabled && (
-        <div className="fixed inset-0 z-[5] pointer-events-none" style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }} />
+        <div className="fixed inset-0 z-[1] backdrop-blur-sm pointer-events-none" />
       )}
 
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 select-none">
+      <div className="fixed inset-0 z-10 flex flex-col pointer-events-none">
         {/* Top bar */}
-        <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-8 py-5 border-b backdrop-blur-sm bg-black/30" style={{ borderColor: `rgba(${c}, 0.1)` }}>
-          <div className="flex items-center gap-3">
-            <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: `rgb(${c})`, boxShadow: `0 0 10px rgba(${c}, 0.6)` }} />
-            <span className="text-xs font-mono tracking-[0.3em] uppercase" style={{ color: `rgba(${c}, 0.7)` }}>System Online</span>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 pointer-events-auto">
+          <div className="flex items-center gap-2 font-mono text-[10px] sm:text-xs" style={{ color: `rgba(${c}, 0.5)` }}>
+            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full animate-pulse" style={{ backgroundColor: `rgb(${c})` }} />
+            System Online
           </div>
-          <div className="hidden md:flex items-center gap-8">
-            {['Dashboard', 'Network', 'Nodes', 'Terminal'].map((item) => (
+          <div className="hidden sm:flex gap-4 md:gap-6">
+            {[
+              { label: 'Scripts', tab: 'scripts' as TabName },
+              { label: 'Terminal', tab: 'terminal' as TabName },
+              { label: 'Config', tab: 'config' as TabName },
+            ].map((item) => (
               <button
-                key={item}
+                key={item.label}
                 data-hover
-                className="text-xs font-mono tracking-[0.2em] uppercase transition-colors duration-300 relative group"
-                style={{ color: `rgba(${c}, 0.35)` }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = `rgba(${c}, 0.7)`; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = `rgba(${c}, 0.35)`; }}
+                onClick={() => onTabOpen(item.tab)}
+                className="font-mono text-[10px] sm:text-xs tracking-wider uppercase transition-colors pointer-events-auto"
+                style={{ color: `rgba(${c}, 0.3)` }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = `rgba(${c}, 0.8)`; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = `rgba(${c}, 0.3)`; }}
               >
-                {item}
-                <span className="absolute -bottom-1 left-0 w-0 h-[1px] group-hover:w-full transition-all duration-300" style={{ backgroundColor: `rgb(${c})` }} />
+                {item.label}
               </button>
             ))}
           </div>
-          <div className="text-xs font-mono" style={{ color: `rgba(${c}, 0.25)` }}>v3.7.1</div>
+          <span className="font-mono text-[10px] sm:text-xs" style={{ color: `rgba(${c}, 0.2)` }}>v3.7.1</span>
         </div>
 
         {/* ── Hero center block ── */}
-        <div className="flex flex-col items-center text-center w-full max-w-2xl mx-auto animate-fade-in-up" style={{ animationDelay: '0.3s', animationFillMode: 'both' }}>
+        <div className="flex-1 flex flex-col items-center justify-center px-4 min-h-0">
 
           {/* Decorative line + diamond — centered */}
-          <div className="flex items-center justify-center gap-4 mb-6 w-full">
-            <div className="w-16 h-[1px]" style={{ background: `linear-gradient(to right, transparent, rgba(${c}, 0.5))` }} />
-            <div className="w-2 h-2 rotate-45 border flex-shrink-0" style={{ borderColor: `rgba(${c}, 0.5)` }} />
-            <div className="w-16 h-[1px]" style={{ background: `linear-gradient(to left, transparent, rgba(${c}, 0.5))` }} />
+          <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+            <div className="w-10 sm:w-16 h-[1px]" style={{ background: `linear-gradient(to right, transparent, rgba(${c}, 0.3))` }} />
+            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rotate-45" style={{ border: `1px solid rgba(${c}, 0.4)` }} />
+            <div className="w-10 sm:w-16 h-[1px]" style={{ background: `linear-gradient(to left, transparent, rgba(${c}, 0.3))` }} />
           </div>
 
           {/* Subtitle — centered */}
-          <p className="text-xs font-mono tracking-[0.5em] uppercase mb-6 w-full text-center" style={{ color: `rgba(${c}, 0.45)` }}>
+          <div className="font-mono text-[8px] sm:text-[10px] tracking-[0.3em] sm:tracking-[0.5em] uppercase mb-4 sm:mb-6" style={{ color: `rgba(${c}, 0.35)` }}>
             Interactive Grid Interface
-          </p>
+          </div>
 
-          {/* Title — centered */}
-          <div className="relative mb-6 w-full flex justify-center">
-            <h1 className="relative inline-block text-center">
-              <span
-                className="font-black tracking-tighter leading-none block"
-                style={{
-                  fontSize: titleFontSize,
-                  color: 'transparent',
-                  WebkitTextStroke: `2px rgba(${c}, 0.8)`,
-                  textShadow: `0 0 40px rgba(${c}, 0.3)`,
-                  filter: isGlitching ? 'hue-rotate(20deg)' : 'none',
-                }}
-              >
-                {isGlitching ? glitchText(displayedText) : displayedText}
-                <span className="animate-pulse" style={{ color: `rgb(${c})` }}>_</span>
-              </span>
-
-              {isGlitching && (
-                <>
-                  <span
-                    className="absolute inset-0 font-black tracking-tighter leading-none flex items-center justify-center"
-                    style={{ fontSize: titleFontSize, color: `rgba(${c}, 0.3)`, clipPath: 'inset(20% 0 60% 0)', transform: 'translateX(-4px)' }}
-                  >
-                    {glitchText(theme.title)}_
-                  </span>
-                  <span
-                    className="absolute inset-0 font-black tracking-tighter leading-none flex items-center justify-center"
-                    style={{ fontSize: titleFontSize, color: 'rgba(0, 220, 220, 0.15)', clipPath: 'inset(60% 0 10% 0)', transform: 'translateX(4px)' }}
-                  >
-                    {glitchText(theme.title)}_
-                  </span>
-                </>
-              )}
-            </h1>
+          {/* Title — centered, hollow outline */}
+          <div className="relative mb-4 sm:mb-6 max-w-[90vw] text-center overflow-hidden" style={{ fontSize: titleFontSize, lineHeight: 1 }}>
+            <span
+              className="font-black tracking-wider font-mono"
+              style={{
+                color: 'transparent',
+                WebkitTextStroke: `1.5px rgb(${c})`,
+                textShadow: `0 0 40px rgba(${c}, 0.25), 0 0 80px rgba(${c}, 0.1)`,
+              }}
+            >
+              {isGlitching ? glitchText(displayedText) : displayedText}
+              <span className="animate-pulse" style={{ color: 'transparent', WebkitTextStroke: `1.5px rgba(${c}, 0.5)` }}>_</span>
+            </span>
+            {isGlitching && (
+              <>
+                <span
+                  className="absolute inset-0 font-black tracking-wider font-mono"
+                  style={{
+                    color: 'transparent',
+                    WebkitTextStroke: `1.5px rgba(${c}, 0.3)`,
+                    clipPath: 'inset(20% 0 50% 0)',
+                    transform: 'translateX(3px)',
+                    fontSize: titleFontSize,
+                  }}
+                >
+                  {glitchText(theme.title)}_
+                </span>
+                <span
+                  className="absolute inset-0 font-black tracking-wider font-mono"
+                  style={{
+                    color: 'transparent',
+                    WebkitTextStroke: `1.5px rgba(${c}, 0.2)`,
+                    clipPath: 'inset(60% 0 10% 0)',
+                    transform: 'translateX(-2px)',
+                    fontSize: titleFontSize,
+                  }}
+                >
+                  {glitchText(theme.title)}_
+                </span>
+              </>
+            )}
           </div>
 
           {/* Fun fact — centered, fixed height */}
-          <div className="h-14 flex items-center justify-center w-full mb-6">
+          <div className="h-6 sm:h-8 flex items-center justify-center mb-6 sm:mb-8 px-4">
             <p
-              className="text-sm md:text-base font-mono leading-relaxed text-center max-w-lg transition-opacity duration-400"
-              style={{
-                color: `rgba(${c}, 0.4)`,
-                opacity: theme.funFact ? 1 : (factFade ? 1 : 0),
-              }}
+              className="font-mono text-[10px] sm:text-xs text-center max-w-[80vw] sm:max-w-md transition-opacity duration-400"
+              style={{ color: `rgba(${c}, 0.3)`, opacity: factFade ? 1 : 0 }}
             >
               {factText}
             </p>
           </div>
 
           {/* CTA Buttons — centered */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="flex gap-3 sm:gap-4 pointer-events-auto">
+            <div
+              className="px-5 sm:px-8 py-2.5 sm:py-3 font-mono text-[10px] sm:text-xs tracking-widest uppercase border"
+              style={{
+                borderColor: `rgba(${c}, 0.25)`,
+                color: `rgba(${c}, 0.5)`,
+              }}
+            >
+              Made by Ang3l
+            </div>
             <button
               data-hover
-              className="group relative px-8 py-3 border font-mono text-sm tracking-[0.2em] uppercase overflow-hidden transition-all duration-500"
-              style={{ borderColor: `rgba(${c}, 0.4)`, color: `rgba(${c}, 0.7)` }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = `rgba(${c}, 0.7)`; e.currentTarget.style.color = '#fff'; e.currentTarget.style.boxShadow = `0 0 30px rgba(${c}, 0.3)`; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = `rgba(${c}, 0.4)`; e.currentTarget.style.color = `rgba(${c}, 0.7)`; e.currentTarget.style.boxShadow = 'none'; }}
+              onClick={() => onTabOpen('scripts')}
+              className="px-5 sm:px-8 py-2.5 sm:py-3 font-mono text-[10px] sm:text-xs tracking-widest uppercase border transition-all duration-300"
+              style={{
+                borderColor: `rgba(${c}, 0.4)`,
+                color: `rgb(${c})`,
+                backgroundColor: `rgba(${c}, 0.05)`,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `rgba(${c}, 0.15)`; e.currentTarget.style.borderColor = `rgba(${c}, 0.8)`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `rgba(${c}, 0.05)`; e.currentTarget.style.borderColor = `rgba(${c}, 0.4)`; }}
             >
-              <span className="relative z-10">Enter System</span>
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ backgroundColor: `rgba(${c}, 0.12)` }} />
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                <div className="absolute top-0 left-0 w-2 h-2 border-t border-l" style={{ borderColor: `rgba(${c}, 0.6)` }} />
-                <div className="absolute top-0 right-0 w-2 h-2 border-t border-r" style={{ borderColor: `rgba(${c}, 0.6)` }} />
-                <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l" style={{ borderColor: `rgba(${c}, 0.6)` }} />
-                <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r" style={{ borderColor: `rgba(${c}, 0.6)` }} />
-              </div>
-            </button>
-            <button
-              data-hover
-              className="px-8 py-3 font-mono text-sm tracking-[0.2em] uppercase transition-colors duration-300"
-              style={{ color: `rgba(${c}, 0.35)` }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = `rgba(${c}, 0.7)`; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = `rgba(${c}, 0.35)`; }}
-            >
-              Documentation →
+              Launch
             </button>
           </div>
         </div>
 
         {/* Stats bar */}
-        <div className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-sm bg-black/30 animate-fade-in-up" style={{ borderColor: `rgba(${c}, 0.1)`, animationDelay: '1s', animationFillMode: 'both' }}>
-          <div className="flex items-center justify-between px-8 py-4 max-w-6xl mx-auto">
+        <div className="pb-4 sm:pb-6 px-4 sm:px-6">
+          <div className="flex justify-center gap-4 sm:gap-8 flex-wrap">
             {stats.map((stat, i) => (
-              <div key={stat.label} className="flex items-center gap-6">
+              <div key={stat.label} className="flex items-center gap-4 sm:gap-8">
                 <div className="text-center">
-                  <div className="text-lg md:text-xl font-mono font-bold" style={{ color: `rgba(${c}, 0.75)` }}>{stat.value}</div>
-                  <div className="text-[10px] font-mono tracking-[0.3em] uppercase" style={{ color: `rgba(${c}, 0.25)` }}>{stat.label}</div>
+                  <div className="font-mono text-xs sm:text-sm font-bold" style={{ color: `rgba(${c}, 0.6)` }}>{stat.value}</div>
+                  <div className="font-mono text-[7px] sm:text-[9px] tracking-[0.2em] sm:tracking-[0.3em] uppercase" style={{ color: `rgba(${c}, 0.2)` }}>{stat.label}</div>
                 </div>
-                {i < stats.length - 1 && <div className="hidden md:block w-[1px] h-8" style={{ backgroundColor: `rgba(${c}, 0.1)` }} />}
+                {i < stats.length - 1 && <div className="hidden sm:block w-[1px] h-6" style={{ backgroundColor: `rgba(${c}, 0.1)` }} />}
               </div>
             ))}
           </div>
         </div>
 
-        {/* Side decorations */}
-        <div className="fixed left-6 top-1/2 -translate-y-1/2 z-20 hidden lg:flex flex-col items-center gap-4">
+        {/* Side decorations — hidden on small viewports */}
+        <div className="hidden md:flex fixed left-6 top-1/2 -translate-y-1/2 flex-col gap-2 pointer-events-auto">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="w-[3px] h-8 transition-all duration-500" style={{ backgroundColor: `rgba(${c}, 0.15)` }} data-hover
+            <div
+              key={i}
+              className="w-1 h-6 transition-all duration-300"
+              style={{ backgroundColor: `rgba(${c}, 0.15)` }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `rgba(${c}, 0.5)`; }}
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `rgba(${c}, 0.15)`; }}
             />
           ))}
-          <div className="w-[1px] h-16" style={{ background: `linear-gradient(to bottom, rgba(${c}, 0.25), transparent)` }} />
+          <div className="font-mono text-[8px] tracking-widest mt-2" style={{ color: `rgba(${c}, 0.15)`, writingMode: 'vertical-rl' }}>DL_v3</div>
         </div>
 
-        <div className="fixed right-6 top-1/2 -translate-y-1/2 z-20 hidden lg:flex flex-col items-center gap-2">
-          <div className="text-[10px] font-mono tracking-widest" style={{ writingMode: 'vertical-rl', color: `rgba(${c}, 0.15)` }}>GRID_INTERFACE_v3</div>
+        <div
+          className="hidden sm:block fixed bottom-4 sm:bottom-6 left-4 sm:left-6 font-mono text-[7px] sm:text-[8px] tracking-[0.2em] sm:tracking-[0.3em] uppercase"
+          style={{ color: `rgba(${c}, 0.12)` }}
+        >
+          GRID_INTERFACE_v3
         </div>
       </div>
     </>

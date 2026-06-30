@@ -29,8 +29,11 @@ function hexToRgb(hex: string) {
 }
 
 const defaultTheme: ThemeState = {
-  hex: '#dc2626', r: 220, g: 38, b: 38,
-  title: 'NEXUS',
+  hex: '#dc2626',
+  r: 220,
+  g: 38,
+  b: 38,
+  title: 'DREAMLAND',
   blurEnabled: false,
   funFact: '',
 };
@@ -86,7 +89,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Memoize the context value so consumers only re-render when theme actually changes
   const value = useMemo(() => ({
-    theme, setHex, setTitle, setBlurEnabled, setFunFact, themeRef,
+    theme,
+    setHex,
+    setTitle,
+    setBlurEnabled,
+    setFunFact,
+    themeRef,
   }), [theme, setHex, setTitle, setBlurEnabled, setFunFact]);
 
   return (
