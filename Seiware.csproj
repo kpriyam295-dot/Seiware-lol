@@ -4,12 +4,22 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <AssemblyName>DreamLand</AssemblyName>
     <RootNamespace>DreamLand</RootNamespace>
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <UseWindowsForms>true</UseWindowsForms>
-    <NoWarn>CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625</NoWarn>
+    <NoWarn>CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625;MSB3277</NoWarn>
+    <!-- Use our new entry point instead of the one in Seiware.cs -->
+    <StartupObject>DreamLandEntry</StartupObject>
   </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.*" />
+    <PackageReference Include="System.Management" Version="8.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="ui\index.html" Condition="Exists('ui\index.html')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>
